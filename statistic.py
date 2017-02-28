@@ -17,7 +17,7 @@ class Statistic(object):
 
     self.model_dir = model_dir
     self.saver = tf.train.Saver(variables + [self.t_op], max_to_keep=max_to_keep)
-    self.writer = tf.train.SummaryWriter('./logs/%s' % self.model_dir, self.sess.graph)
+    self.writer = tf.summary.FileWriter('./logs/%s' % self.model_dir, self.sess.graph)
 
     with tf.variable_scope('summary'):
       scalar_summary_tags = ['train_l', 'test_l']
@@ -27,7 +27,7 @@ class Statistic(object):
 
       for tag in scalar_summary_tags:
         self.summary_placeholders[tag] = tf.placeholder('float32', None, name=tag.replace(' ', '_'))
-        self.summary_ops[tag]  = tf.scalar_summary('%s/%s' % (data, tag), self.summary_placeholders[tag])
+        self.summary_ops[tag]  = tf.summary.scalar('%s/%s' % (data, tag), self.summary_placeholders[tag])
 
   def reset(self):
     pass
@@ -44,8 +44,8 @@ class Statistic(object):
     return self.t_op.eval(session=self.sess)
 
   def inject_summary(self, tag_dict, t):
-    summary_str_lists = self.sess.run([self.summary_ops[tag] for tag in tag_dict.keys()], {
-      self.summary_placeholders[tag]: value for tag, value in tag_dict.items()
+    summary_str_lists = self.sess.run([self.summary_ops[tag] for tag in list(tag_dict.keys())], {
+      self.summary_placeholders[tag]: value for tag, value in list(tag_dict.items())
     })
     for summary_str in summary_str_lists:
       self.writer.add_summary(summary_str, t)
@@ -60,7 +60,7 @@ class Statistic(object):
 
   def load_model(self):
     logger.info("Initializing all variables")
-    tf.initialize_all_variables().run()
+    tf.global_variables_initializer().run()
 
     logger.info("Loading checkpoints...")
     ckpt = tf.train.get_checkpoint_state(self.model_dir)

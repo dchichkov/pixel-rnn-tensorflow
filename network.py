@@ -46,7 +46,7 @@ class Network:
     
     # main reccurent layers
     l_hid = self.l[scope]
-    for idx in xrange(conf.recurrent_length):
+    for idx in range(conf.recurrent_length):
       if conf.model == "pixel_rnn":
         scope = 'LSTM%d' % idx
         self.l[scope] = l_hid = diagonal_bilstm(l_hid, conf, scope=scope)
@@ -58,7 +58,7 @@ class Network:
       logger.info("Building %s" % scope)
 
     # output reccurent layers
-    for idx in xrange(conf.out_recurrent_length):
+    for idx in range(conf.out_recurrent_length):
       scope = 'CONV_OUT%d' % idx
       self.l[scope] = l_hid = tf.nn.relu(conv2d(l_hid, conf.out_hidden_dims, [1, 1], "B", scope=scope))
       logger.info("Building %s" % scope)
@@ -69,7 +69,7 @@ class Network:
 
       logger.info("Building loss and optims")
       self.loss = tf.reduce_mean(tf.nn.sigmoid_cross_entropy_with_logits(
-          self.l['conv2d_out_logits'], self.l['normalized_inputs'], name='loss'))
+          logits=self.l['conv2d_out_logits'], labels=self.l['normalized_inputs'], name='loss'))
     else:
       raise ValueError("Implementation in progress for RGB colors")
 
@@ -82,10 +82,10 @@ class Network:
       self.l['normalized_inputs_flat'] = tf.reshape(
           self.l['normalized_inputs'], [-1, self.height * self.width, COLOR_DIM])
 
-      pred_pixels = [tf.squeeze(pixel, squeeze_dims=[1])
-          for pixel in tf.split(1, self.height * self.width, self.l['conv2d_out_logits_flat'])]
-      target_pixels = [tf.squeeze(pixel, squeeze_dims=[1])
-          for pixel in tf.split(1, self.height * self.width, self.l['normalized_inputs_flat'])]
+      pred_pixels = [tf.squeeze(pixel, axis=[1])
+          for pixel in tf.split(axis=1, num_or_size_splits=self.height * self.width, value=self.l['conv2d_out_logits_flat'])]
+      target_pixels = [tf.squeeze(pixel, axis=[1])
+          for pixel in tf.split(axis=1, num_or_size_splits=self.height * self.width, value=self.l['normalized_inputs_flat'])]
 
       softmaxed_pixels = [tf.nn.softmax(pixel) for pixel in pred_pixels]
 
@@ -97,7 +97,7 @@ class Network:
 
       logger.info("Building loss and optims")
       self.loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(
-          self.l['conv2d_out_logits'], self.l['normalized_inputs'], name='loss'))
+          logits=self.l['conv2d_out_logits'], labels=self.l['normalized_inputs'], name='loss'))
 
     optimizer = tf.train.RMSPropOptimizer(conf.learning_rate)
     grads_and_vars = optimizer.compute_gradients(self.loss)
@@ -125,14 +125,14 @@ class Network:
   def generate(self):
     samples = np.zeros((100, self.height, self.width, 1), dtype='float32')
 
-    for i in xrange(self.height):
-      for j in xrange(self.width):
-        for k in xrange(self.channel):
+    for i in range(self.height):
+      for j in range(self.width):
+        for k in range(self.channel):
           next_sample = binarize(self.predict(samples))
           samples[:, i, j, k] = next_sample[:, i, j, k]
 
           if self.data == 'mnist':
-            print "=" * (self.width/2), "(%2d, %2d)" % (i, j), "=" * (self.width/2)
+            print("=" * (self.width//2), "(%2d, %2d)" % (i, j), "=" * (self.width//2))
             mprint(next_sample[0,:,:,:])
 
     return samples

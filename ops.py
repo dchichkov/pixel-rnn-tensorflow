@@ -3,7 +3,8 @@ logging.basicConfig(format="[%(asctime)s] %(message)s", datefmt="%m-%d %H:%M:%S"
 
 import numpy as np
 import tensorflow as tf
-from tensorflow.python.ops import rnn_cell
+from tensorflow.contrib.rnn.python.ops import core_rnn_cell
+from tensorflow.contrib.rnn.python.ops import rnn_cell
 from tensorflow.examples.tutorials.mnist import input_data
 from tensorflow.contrib.layers import variance_scaling_initializer
 
@@ -30,7 +31,7 @@ def get_shape(layer):
 def skew(inputs, scope="skew"):
   with tf.name_scope(scope):
     batch, height, width, channel = get_shape(inputs) # [batch, height, width, channel]
-    rows = tf.split(1, height, inputs) # [batch, 1, width, channel]
+    rows = tf.split(axis=1, num_or_size_splits=height, value=inputs) # [batch, 1, width, channel]
 
     new_width = width + height - 1
     new_rows = []
@@ -46,7 +47,7 @@ def skew(inputs, scope="skew"):
       assert get_shape(untransposed_row) == [batch, new_width, channel], "wrong shape of skewed row"
       new_rows.append(untransposed_row)
 
-    outputs = tf.pack(new_rows, axis=1, name="output")
+    outputs = tf.stack(new_rows, axis=1, name="output")
     assert get_shape(outputs) == [None, height, new_width, channel], "wrong shape of skewed output"
 
   logger.debug('[skew] %s : %s %s -> %s %s' \
@@ -59,11 +60,11 @@ def unskew(inputs, width=None, scope="unskew"):
     width = width if width else height
 
     new_rows = []
-    rows = tf.split(1, height, inputs)
+    rows = tf.split(axis=1, num_or_size_splits=height, value=inputs)
 
     for idx, row in enumerate(rows):
       new_rows.append(tf.slice(row, [0, 0, idx, 0], [-1, -1, width, -1]))
-    outputs = tf.concat(1, new_rows, name="output")
+    outputs = tf.concat(axis=1, values=new_rows, name="output")
 
   logger.debug('[unskew] %s : %s %s -> %s %s' \
       % (scope, inputs.name, inputs.get_shape(), outputs.name, outputs.get_shape()))
@@ -79,7 +80,7 @@ def conv2d(
     activation_fn=None,
     weights_initializer=WEIGHT_INITIALIZER,
     weights_regularizer=None,
-    biases_initializer=tf.zeros_initializer,
+    biases_initializer=tf.zeros_initializer(),
     biases_regularizer=None,
     scope="conv2d"):
   with tf.variable_scope(scope):
@@ -138,7 +139,7 @@ def conv1d(
     activation_fn=None,
     weights_initializer=WEIGHT_INITIALIZER,
     weights_regularizer=None,
-    biases_initializer=tf.zeros_initializer,
+    biases_initializer=tf.zeros_initializer(),
     biases_regularizer=None,
     scope="conv1d"):
   with tf.variable_scope(scope):
@@ -198,7 +199,7 @@ def diagonal_bilstm(inputs, conf, scope='diagonal_bilstm'):
     output_state_bw_only_last = tf.slice(output_state_bw, [0, height-1, 0, 0], [-1, 1, -1, -1])
     dummy_zeros = tf.zeros_like(output_state_bw_only_last)
 
-    output_state_bw_with_last_zeros = tf.concat(1, [output_state_bw_except_last, dummy_zeros])
+    output_state_bw_with_last_zeros = tf.concat(axis=1, values=[output_state_bw_except_last, dummy_zeros])
 
     tf.add_to_collection('output_state_bw_with_last_zeros', output_state_bw_with_last_zeros)
 
@@ -225,8 +226,8 @@ def diagonal_lstm(inputs, conf, scope='diagonal_lstm'):
 
     tf.add_to_collection('rnn_inputs', rnn_inputs)
 
-    rnn_input_list = [tf.squeeze(rnn_input, squeeze_dims=[1]) 
-        for rnn_input in tf.split(split_dim=1, num_split=width, value=rnn_inputs)]
+    rnn_input_list = [tf.squeeze(rnn_input, axis=[1]) 
+        for rnn_input in tf.split(axis=1, num_or_size_splits=width, value=rnn_inputs)]
 
     cell = DiagonalLSTMCell(conf.hidden_dims, height, channel)
 
@@ -234,10 +235,10 @@ def diagonal_lstm(inputs, conf, scope='diagonal_lstm'):
       outputs, states = tf.nn.dynamic_rnn(cell,
           inputs=rnn_inputs, dtype=tf.float32) # [batch, width, height * hidden_dims]
     else:
-      output_list, state_list = tf.nn.rnn(cell,
+      output_list, state_list = tf.contrib.static_rnn(cell,
           inputs=rnn_input_list, dtype=tf.float32) # width * [batch, height * hidden_dims]
 
-      packed_outputs = tf.pack(output_list, 1) # [batch, width, height * hidden_dims]
+      packed_outputs = tf.stack(output_list, 1) # [batch, width, height * hidden_dims]
       width_first_outputs = tf.reshape(packed_outputs,
           [-1, width, height, conf.hidden_dims]) # [batch, width, height, hidden_dims]
 
@@ -249,7 +250,7 @@ def diagonal_lstm(inputs, conf, scope='diagonal_lstm'):
 
     return outputs
 
-class DiagonalLSTMCell(rnn_cell.RNNCell):
+class DiagonalLSTMCell(core_rnn_cell.RNNCell):
   def __init__(self, hidden_dims, height, channel):
     self._num_unit_shards = 1
     self._forget_bias = 1.
@@ -299,18 +300,18 @@ class DiagonalLSTMCell(rnn_cell.RNNCell):
       lstm_matrix = tf.sigmoid(s_to_s + i_to_s)
 
       # i = input_gate, g = new_input, f = forget_gate, o = output_gate
-      i, g, f, o = tf.split(1, 4, lstm_matrix)
+      i, g, f, o = tf.split(axis=1, num_or_size_splits=4, value=lstm_matrix)
 
       c = f * c_prev + i * g
-      h = tf.mul(o, tf.tanh(c), name='hid')
+      h = tf.multiply(o, tf.tanh(c), name='hid')
 
     logger.debug('[DiagonalLSTMCell] %s : %s %s -> %s %s' \
         % (scope, i_to_s.name, i_to_s.get_shape(), h.name, h.get_shape()))
 
-    new_state = tf.concat(1, [c, h])
+    new_state = tf.concat(axis=1, values=[c, h])
     return h, new_state
 
-class RowLSTMCell(rnn_cell.RNNCell):
+class RowLSTMCell(core_rnn_cell.RNNCell):
   def __init__(self, num_units, kernel_shape=[3, 1]):
     self._num_units = num_units
     self._state_size = num_units * 2

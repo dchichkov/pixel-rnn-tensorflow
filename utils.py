@@ -3,7 +3,7 @@ logging.basicConfig(format="[%(asctime)s] %(message)s", datefmt="%m-%d %H:%M:%S"
 
 import os
 import sys
-import urllib
+import urllib.request, urllib.parse, urllib.error
 import pprint
 import tarfile
 import tensorflow as tf
@@ -19,16 +19,16 @@ logger = logging.getLogger(__name__)
 
 def mprint(matrix, pivot=0.5):
   for array in matrix:
-    print "".join("#" if i > pivot else " " for i in array)
+    print("".join("#" if i > pivot else " " for i in array))
 
 def show_all_variables():
   total_count = 0
   for idx, op in enumerate(tf.trainable_variables()):
     shape = op.get_shape()
     count = np.prod(shape)
-    print "[%2d] %s %s = %s" % (idx, op.name, shape, count)
+    print("[%2d] %s %s = %s" % (idx, op.name, shape, count))
     total_count += int(count)
-  print "[Total] variable size: %s" % "{:,}".format(total_count)
+  print("[Total] variable size: %s" % "{:,}".format(total_count))
 
 def get_timestamp():
   now = datetime.datetime.now(dateutil.tz.tzlocal())
@@ -51,7 +51,7 @@ def get_model_dir(config, exceptions=None):
   attrs = config.__dict__['__flags']
   pp(attrs)
 
-  keys = attrs.keys()
+  keys = list(attrs.keys())
   keys.sort()
   keys.remove('data')
   keys = ['data'] + keys
@@ -67,7 +67,7 @@ def get_model_dir(config, exceptions=None):
 def preprocess_conf(conf):
   options = conf.__flags
 
-  for option, value in options.items():
+  for option, value in list(options.items()):
     option = option.lower()
 
 def check_and_create_dir(directory):
@@ -95,8 +95,8 @@ def maybe_download_and_extract(dest_directory):
       sys.stdout.write('\r>> Downloading %s %.1f%%' % (filename,
           float(count * block_size) / float(total_size) * 100.0))
       sys.stdout.flush()
-    filepath, _ = urllib.urlretrieve(DATA_URL, filepath, _progress)
+    filepath, _ = urllib.request.urlretrieve(DATA_URL, filepath, _progress)
     print()
     statinfo = os.stat(filepath)
-    print('Successfully downloaded', filename, statinfo.st_size, 'bytes.')
+    print(('Successfully downloaded', filename, statinfo.st_size, 'bytes.'))
     tarfile.open(filepath, 'r:gz').extractall(dest_directory)
